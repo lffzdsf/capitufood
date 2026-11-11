@@ -31,7 +31,9 @@ def main():
     url = os.environ.get("APPS_SCRIPT_URL", "").strip()
     token = os.environ.get("TOKEN_ROBO", "").strip()
     if not url or not token:
-        sys.exit("Faltam os segredos APPS_SCRIPT_URL e TOKEN_ROBO no repositório.")
+        # Ainda não configurado: avisa sem marcar a tarefa como falha (evita e-mails a cada 5 minutos).
+        print("::notice::Fotos desativadas: crie os segredos APPS_SCRIPT_URL e TOKEN_ROBO no repositório.")
+        return
 
     try:
         p = chamar(url, {"acao": "fotoPendente", "robo": token})
