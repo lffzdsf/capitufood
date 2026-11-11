@@ -1,0 +1,27 @@
+name: Fotos da Capitu
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"   # o GitHub pode atrasar alguns minutos
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fotos
+  cancel-in-progress: false
+
+jobs:
+  foto:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Garantir o ffmpeg
+        run: command -v ffmpeg >/dev/null || (sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg)
+      - name: Tirar a foto, se houver uma pendente
+        run: python3 scripts/foto.py
+        env:
+          APPS_SCRIPT_URL: ${{ secrets.APPS_SCRIPT_URL }}
+          TOKEN_ROBO: ${{ secrets.TOKEN_ROBO }}
