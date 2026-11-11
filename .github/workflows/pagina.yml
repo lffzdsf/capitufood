@@ -1,0 +1,26 @@
+name: Publicar a página
+
+# Copia a pasta docs/ para o branch gh-pages, de onde o GitHub Pages serve o site.
+on:
+  push:
+    branches: [main]
+    paths: ["docs/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: pagina
+  cancel-in-progress: true
+
+jobs:
+  publicar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Enviar docs/ para o branch gh-pages
+        run: git push --force origin "$(git subtree split --prefix docs)":refs/heads/gh-pages

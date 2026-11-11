@@ -36,7 +36,8 @@ Ao mudar o código depois, use **Implantar > Gerenciar implantações > Editar >
 ### 2. Página
 
 1. Edite `docs/config.js` e cole o URL `/exec` entre as aspas.
-2. No GitHub: **Settings > Pages > Deploy from a branch**, branch `main`, pasta `/docs`.
+2. Envie a alteração para o branch `main`. A tarefa **Publicar a página** copia `docs/` para o branch `gh-pages`, de onde o GitHub Pages serve o site em <https://lffzdsf.github.io/capitufood/>.
+3. Se o site não aparecer, confira em **Settings > Pages** se a origem é **Deploy from a branch**, branch `gh-pages`, pasta `/ (root)`.
 
 ### 3. Fotos automáticas
 
