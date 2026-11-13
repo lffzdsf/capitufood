@@ -2,7 +2,7 @@ name: Fotos da Capitu
 
 on:
   schedule:
-    - cron: "*/5 * * * *"   # o GitHub pode atrasar alguns minutos
+    - cron: "*/15 * * * *"  # reserva: o GitHub atrasa ou pula execuções; quem chama na hora é o Apps Script
   workflow_dispatch:
 
 permissions:

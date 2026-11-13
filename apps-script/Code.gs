@@ -12,6 +12,9 @@
  *   SENHA_PAINEL         senha que a página pede para entrar
  *   TOKEN_ROBO           senha longa usada só pelo GitHub Actions para mandar fotos
  *   PASTA_FOTOS_ID       opcional; se faltar, a pasta é criada no Drive na primeira foto
+ *   GITHUB_TOKEN         token do GitHub (só "Actions: Read and write" neste repositório) que permite
+ *                        ao Google chamar o robô de fotos na hora certa
+ *   GITHUB_REPO          opcional, padrão lffzdsf/capitufood
  */
 
 var PROPS = PropertiesService.getScriptProperties();
@@ -273,25 +276,77 @@ function fotosConfig_(c) {
   return { ok: true, config: configFotos_() };
 }
 
-/** O robô pergunta: é hora de tirar uma foto? Se for, já recebe o link do vídeo. */
-function fotoPendente_() {
+/** Decide se há foto devida agora. Só lê o estado do comedouro (uma chamada à Tuya); não abre vídeo.
+ *  `agora` (segundos) existe para teste; em uso normal fica vazio. */
+function fotoDevida_(agora) {
   var cfg = configFotos_();
-  if (!cfg.ativas) return { ok: true, tirar: false, motivo: 'fotos desligadas' };
-  var e = estado_();
-  if (!e.online) return { ok: true, tirar: false, motivo: 'comedouro offline' };
-  if (e.props.basic_private) return { ok: true, tirar: false, motivo: 'modo privado ligado' };
-
-  var agora = Math.floor(Date.now() / 1000);
-  var refeicao = (e.ultima_refeicao && e.ultima_refeicao.time) || 0;
+  if (!cfg.ativas) return { tirar: false, motivo: 'fotos desligadas' };
+  var props = propriedades_();
+  if (props.basic_private) return { tirar: false, motivo: 'modo privado ligado' };
+  agora = agora || Math.floor(Date.now() / 1000);
+  var ultima = null;
+  try { ultima = JSON.parse(props.feed_record || 'null'); } catch (err) { /* sem registro */ }
+  var refeicao = (ultima && ultima.time) || 0;
   var motivo = '';
   if (refeicao > Number(prop_('FOTO_ULTIMA_REFEICAO') || 0) && agora >= refeicao + cfg.minutosApos * 60 && agora - refeicao < 3 * 3600) {
     motivo = 'refeicao';
   } else if (cfg.intervaloMin > 0 && agora - Number(prop_('FOTO_ULTIMA_HORA') || 0) >= cfg.intervaloMin * 60) {
     motivo = 'rotina';
   }
-  if (!motivo) return { ok: true, tirar: false, motivo: 'nada pendente' };
+  if (!motivo) return { tirar: false, motivo: 'nada pendente' };
+  return { tirar: true, motivo: motivo, refeicao: refeicao };
+}
+
+/** O robô pergunta: é hora de tirar uma foto? Se for, já recebe o link do vídeo. */
+function fotoPendente_() {
+  var d = fotoDevida_();
+  if (!d.tirar) return { ok: true, tirar: false, motivo: d.motivo };
+  if (!tuya_('GET', '/v1.0/devices/' + dispositivo_()).online) return { ok: true, tirar: false, motivo: 'comedouro offline' };
   var url = tuya_('POST', '/v1.0/devices/' + dispositivo_() + '/stream/actions/allocate', { type: 'rtsp' }).url;
-  return { ok: true, tirar: true, motivo: motivo, refeicao: refeicao, url: url };
+  return { ok: true, tirar: true, motivo: d.motivo, refeicao: d.refeicao, url: url };
+}
+
+/* ====================== agendador do Google ======================
+   O agendador do GitHub chega a atrasar horas (ou pular execuções). O do Google é pontual:
+   a cada 5 minutos ele confere se há foto devida e, só então, manda o GitHub rodar o robô na hora. */
+
+function verificarFoto() {
+  var token = prop_('GITHUB_TOKEN');
+  if (!token) return;
+  var d;
+  try {
+    d = fotoDevida_();
+  } catch (err) {
+    PROPS.setProperty('FOTO_ULTIMO_ERRO', 'Tuya: ' + String(err && err.message || err).slice(0, 160));
+    return;
+  }
+  if (!d.tirar) return;
+  var agora = Date.now();
+  if (agora - Number(prop_('FOTO_DISPARO') || 0) < 10 * 60000) return;   // já chamou o robô há pouco
+  var repo = prop_('GITHUB_REPO') || 'lffzdsf/capitufood';
+  var resp = UrlFetchApp.fetch('https://api.github.com/repos/' + repo + '/actions/workflows/fotos.yml/dispatches', {
+    method: 'post',
+    contentType: 'application/json',
+    muteHttpExceptions: true,
+    headers: { Authorization: 'Bearer ' + token, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', 'User-Agent': 'capitu-food' },
+    payload: JSON.stringify({ ref: 'main' })
+  });
+  var cod = resp.getResponseCode();
+  if (cod === 204) {
+    PROPS.setProperties({ FOTO_DISPARO: String(agora), FOTO_ULTIMO_ERRO: '' });
+  } else {
+    var dica = cod === 401 ? ' (token inválido ou vencido)' : (cod === 403 || cod === 404) ? ' (token sem permissão neste repositório)' : '';
+    PROPS.setProperty('FOTO_ULTIMO_ERRO', 'GitHub respondeu ' + cod + dica);
+  }
+}
+
+/** Rode uma vez pelo editor para ligar o agendador (a cada 5 minutos). Pode rodar de novo sem duplicar. */
+function instalarGatilho() {
+  ScriptApp.getProjectTriggers().forEach(function (t) {
+    if (t.getHandlerFunction() === 'verificarFoto') ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger('verificarFoto').timeBased().everyMinutes(5).create();
+  Logger.log('Agendador ligado: verificarFoto roda a cada 5 minutos.');
 }
 
 function pastaFotos_() {
@@ -325,8 +380,19 @@ function fotoSalvar_(c) {
 }
 
 function fotos_() {
-  var id = prop_('PASTA_FOTOS_ID');
-  return { ok: true, config: configFotos_(), itens: indice_(), pasta: id ? 'https://drive.google.com/drive/folders/' + id : '' };
+  var id = prop_('PASTA_FOTOS_ID'), itens = indice_();
+  return {
+    ok: true,
+    config: configFotos_(),
+    itens: itens,
+    pasta: id ? 'https://drive.google.com/drive/folders/' + id : '',
+    diag: {
+      gatilho: !!prop_('GITHUB_TOKEN'),
+      disparo: Math.floor(Number(prop_('FOTO_DISPARO') || 0) / 1000),
+      ultimaFoto: itens.length ? itens[0].t : 0,
+      erro: prop_('FOTO_ULTIMO_ERRO')
+    }
+  };
 }
 
 function fotoVer_(id) {
@@ -368,4 +434,6 @@ function testarConfiguracao() {
   Logger.log('Comedouro: %s (%s) - %s', e.nome, e.modelo, e.online ? 'online' : 'offline');
   Logger.log('Pasta das fotos: %s', pastaFotos_().getUrl());
   Logger.log('SENHA_PAINEL definida: %s | TOKEN_ROBO definido: %s', !!prop_('SENHA_PAINEL'), !!prop_('TOKEN_ROBO'));
+  Logger.log('GITHUB_TOKEN definido: %s | agendador ligado: %s', !!prop_('GITHUB_TOKEN'),
+    ScriptApp.getProjectTriggers().some(function (t) { return t.getHandlerFunction() === 'verificarFoto'; }));
 }

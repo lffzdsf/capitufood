@@ -6,9 +6,9 @@ Painel do comedouro da Capitu (Tuya F1 Pro): câmera ao vivo com som, alimentaç
 
 | Peça | Onde roda | O que faz |
 |---|---|---|
-| `docs/` | GitHub Pages | A página. Não contém nenhum segredo. |
+| `docs/` | GitHub Pages | A página, com favicon e ícone da tela inicial (gerados por `scripts/gerar_icones.py` a partir do logo). Não contém nenhum segredo. |
 | `apps-script/` | Google Apps Script | Recebe os cliques, fala com a Tuya, guarda as fotos no Drive. Tem a chave da Tuya e a senha do painel. |
-| `scripts/foto.py` + `.github/workflows/fotos.yml` | GitHub Actions | A cada 5 minutos pergunta ao Apps Script se há foto pendente; se houver, captura um quadro e entrega. |
+| `scripts/foto.py` + `.github/workflows/fotos.yml` | GitHub Actions | Chamado pelo Apps Script quando há foto devida (e, como reserva, a cada 15 minutos): captura um quadro e entrega. |
 | `servidor.py`, `tuya.py`, `painel.html` | Seu computador | Versão local, opcional. Usa o arquivo `.env`. |
 
 ## Publicar
@@ -41,18 +41,29 @@ Ao mudar o código depois, use **Implantar > Gerenciar implantações > Editar >
 
 ### 3. Fotos automáticas
 
-No GitHub: **Settings > Secrets and variables > Actions > New repository secret**:
+O GitHub sozinho atrasa ou pula tarefas agendadas (chegou a rodar 4 vezes por dia em vez de 288). Por isso o Google, que é pontual, confere a cada 5 minutos se há foto devida e chama o robô do GitHub na hora.
+
+**a) Segredos do repositório** (**Settings > Secrets and variables > Actions > New repository secret**):
 
 | Segredo | Valor |
 |---|---|
-| `APPS_SCRIPT_URL` | O mesmo URL `/exec` |
+| `APPS_SCRIPT_URL` | O URL `/exec` do Apps Script |
 | `TOKEN_ROBO` | O mesmo valor da propriedade do script |
 
-Para testar na hora: **Actions > Fotos da Capitu > Run workflow**. Os ajustes (ligar, quantos minutos depois da refeição, foto de rotina) ficam no próprio painel, em **Álbum da Capitu**.
+**b) Token para o Google chamar o GitHub** (**Settings > Developer settings > Personal access tokens > Fine-grained tokens > Generate new token**):
+
+- **Repository access:** *Only select repositories* e escolha `capitufood`.
+- **Permissions > Repository permissions > Actions:** *Read and write*.
+- Copie o token e crie no Apps Script a propriedade `GITHUB_TOKEN`.
+
+**c) Ligar o agendador:** depois de colar o `Code.gs` novo e o `appsscript.json` novo, rode a função `instalarGatilho` no editor (autorize de novo quando o Google pedir). Em seguida, **Implantar > Gerenciar implantações > Editar > Nova versão**.
+
+Para testar: **Actions > Fotos da Capitu > Run workflow**. Os ajustes (ligar, minutos depois da refeição, foto de rotina) ficam no painel, em **Álbum da Capitu**, que também mostra o estado do agendador e avisos de erro.
 
 ## Limites conhecidos
 
-- O horário das fotos é aproximado: o agendador do GitHub atrasa e roda no máximo a cada 5 minutos.
+- O horário das fotos é aproximado: o Google confere a cada 5 minutos e o robô leva cerca de um minuto para iniciar.
+- O token do GitHub vence (no máximo em 1 ano). Quando vencer, o álbum avisa "token inválido ou vencido"; gere outro e troque a propriedade `GITHUB_TOKEN`.
 - O GitHub desliga tarefas agendadas de repositórios sem atividade por 60 dias; basta reativar em **Actions**.
 - O vídeo vem em 640x360 e depende dos serviços de nuvem da Tuya estarem ativos no projeto.
 - A agenda aceita até 10 horários, de 1 a 9 porções, válidos para todos os dias.
