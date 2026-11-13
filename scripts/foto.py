@@ -4,6 +4,9 @@
 Roda no GitHub Actions (veja .github/workflows/fotos.yml). Só usa a biblioteca padrão e o ffmpeg.
 Variáveis de ambiente: APPS_SCRIPT_URL (termina em /exec) e TOKEN_ROBO.
 Nenhum segredo da Tuya passa por aqui: o link do vídeo vem pronto e nunca é impresso.
+
+O resultado de cada execução aparece como anotação na página da execução no GitHub
+(visível sem abrir o log).
 """
 import base64
 import json
@@ -13,6 +16,16 @@ import sys
 import tempfile
 import urllib.error
 import urllib.request
+
+
+def anotar(nivel, msg):
+    """Anotação na página da execução (notice, warning ou error)."""
+    print(f"::{nivel}::{msg}", flush=True)
+
+
+def falhar(msg):
+    anotar("error", msg)
+    sys.exit(1)
 
 
 def chamar(url, dados):
@@ -35,22 +48,22 @@ def main():
         msg = ("Faltam os segredos do repositório: " + ", ".join(faltam) + ". Crie em Settings > Secrets and variables > "
                "Actions, na aba Secrets (não em Variables), com o nome exatamente assim.")
         if os.environ.get("GITHUB_EVENT_NAME") != "schedule":
-            sys.exit(msg)                      # teste manual ou alteração no robô: a falha tem que aparecer
+            falhar(msg)                        # teste manual ou alteração no robô: a falha tem que aparecer
         # Execução agendada sem configuração: avisa sem marcar falha (evita e-mail a cada execução).
-        print("::notice::Fotos desativadas. " + msg)
+        anotar("notice", "Fotos desativadas. " + msg)
         return
     if not (url.startswith("https://script.google.com/macros/s/") and url.endswith("/exec")):
-        sys.exit("APPS_SCRIPT_URL não parece o endereço do app da web: deve começar com "
-                 "https://script.google.com/macros/s/ e terminar em /exec (não é o 'código de implantação').")
+        falhar("APPS_SCRIPT_URL não parece o endereço do app da web: deve começar com "
+               "https://script.google.com/macros/s/ e terminar em /exec (não é o 'código de implantação').")
 
     try:
         p = chamar(url, {"acao": "fotoPendente", "robo": token})
     except (urllib.error.URLError, ValueError) as e:
-        sys.exit(f"O Apps Script não respondeu: {type(e).__name__}")
+        falhar(f"O Apps Script não respondeu ({type(e).__name__}). Confira o endereço e se a implantação está aberta a 'Qualquer pessoa'.")
     if not p.get("ok"):
-        sys.exit(f"O Apps Script recusou: {p.get('erro')}")
+        falhar(f"O Apps Script recusou: {p.get('erro')}")
     if not p.get("tirar"):
-        print(f"Nada a fazer: {p.get('motivo')}")
+        anotar("notice", f"Nada a fazer: {p.get('motivo')}")
         return
 
     with tempfile.TemporaryDirectory() as pasta:
@@ -62,15 +75,15 @@ def main():
         )
         if r.returncode != 0 or not os.path.exists(arquivo):
             # A mensagem do ffmpeg pode conter o link do vídeo; não vai para o log.
-            sys.exit("O ffmpeg não conseguiu capturar a imagem da câmera.")
+            falhar("O ffmpeg não conseguiu capturar a imagem da câmera.")
         with open(arquivo, "rb") as f:
             jpeg = base64.b64encode(f.read()).decode()
 
     g = chamar(url, {"acao": "fotoSalvar", "robo": token, "motivo": p["motivo"],
                      "refeicao": p.get("refeicao", 0), "jpeg": jpeg})
     if not g.get("ok"):
-        sys.exit(f"O Apps Script não salvou a foto: {g.get('erro')}")
-    print(f"Foto salva no Drive: {g.get('nome')} ({p['motivo']})")
+        falhar(f"O Apps Script não salvou a foto: {g.get('erro')}")
+    anotar("notice", f"Foto salva no Drive: {g.get('nome')} ({p['motivo']})")
 
 
 if __name__ == "__main__":
