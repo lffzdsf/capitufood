@@ -366,7 +366,8 @@
   <div class="linha">
     <section class="painel" aria-labelledby="tAlbum">
       <div class="cab"><div><h2 id="tAlbum">Álbum da Capitu</h2><p class="sub">Fotos automáticas guardadas no Drive</p></div>
-        <a class="bt" id="albumPasta" target="_blank" rel="noopener" hidden>Abrir a pasta no Drive</a></div>
+        <span class="grupo"><button class="bt" id="verificarAgora"><span class="gira" aria-hidden="true"></span><svg class="i" aria-hidden="true"><use href="#i-atualizar"/></svg>Verificar agora</button>
+        <a class="bt" id="albumPasta" target="_blank" rel="noopener" hidden>Abrir a pasta no Drive</a></span></div>
       <div class="ajustes-foto">
         <div class="aj"><label for="fAtivas">Tirar fotos automaticamente</label><input class="chave" type="checkbox" id="fAtivas"></div>
         <div class="aj"><label for="fApos">Depois de cada refeição</label>
@@ -685,10 +686,16 @@ async function carregarAlbum() {
     $("fAtivas").checked = f.config.ativas; $("fApos").value = String(f.config.minutosApos); $("fIntervalo").value = String(f.config.intervaloMin);
     $("albumPasta").hidden = !f.pasta; if (f.pasta) $("albumPasta").href = f.pasta;
     const dg = f.diag || {}; let st;
-    if (!dg.gatilho) st = "Agendador do Google desligado: falta o token do GitHub no Apps Script. Enquanto isso, as fotos dependem do agendador do GitHub, que pode atrasar por horas.";
+    const idade = dg.verif ? Math.round((Date.now() / 1000 - dg.verif.t) / 60) : null;
+    if (!dg.gatilho) st = "Agendador do Google desligado: falta o token do GitHub no Apps Script (propriedade GITHUB_TOKEN).";
+    else if (dg.agendador === false) st = "O gatilho de 5 minutos não está instalado: rode a função instalarGatilho no editor do Apps Script.";
     else if (dg.erro) st = "Aviso do agendador: " + dg.erro + ".";
-    else st = dg.disparo ? "Agendador ligado. Último pedido de foto: " + dataHora(dg.disparo) + "." : "Agendador ligado. Ainda não houve foto devida.";
-    if (dg.ultimaFoto) st += " Última foto salva: " + dataHora(dg.ultimaFoto) + ".";
+    else if (!dg.verif) st = "Gatilho instalado, mas ainda não rodou. Toque em Verificar agora para testar.";
+    else {
+      st = "Última verificação do agendador: " + dataHora(dg.verif.t) + " (" + dg.verif.r + ").";
+      if (idade > 12) st += " Faz " + idade + " minutos: o gatilho não está rodando. Veja Gatilhos e Execuções no Apps Script.";
+    }
+    if (dg.disparo) st += " Último pedido de foto: " + dataHora(dg.disparo) + ".";
     $("albumStatus").textContent = st;
     const itens = f.itens.slice(0, 8), box = $("album");
     $("albumVazio").hidden = itens.length > 0; box.innerHTML = "";
@@ -710,6 +717,16 @@ async function salvarConfigFotos() {
   } catch (err) { aviso("Não deu certo: " + err.message); carregarAlbum(); }
 }
 for (const id of ["fAtivas", "fApos", "fIntervalo"]) $(id).onchange = salvarConfigFotos;
+$("verificarAgora").onclick = async () => {
+  const b = $("verificarAgora"); b.disabled = true; b.setAttribute("aria-busy", "true");
+  try {
+    const r = await api("verificarAgora"), d = r.detalhe || {};
+    const refeicao = d.ultimaRefeicao ? "última refeição " + hora(d.ultimaRefeicao) : "sem refeição registrada";
+    const foto = d.ultimaRefeicaoFotografada === d.ultimaRefeicao ? "já fotografada" : "ainda sem foto";
+    aviso("Verificação: " + r.resultado + ". " + refeicao + " (" + foto + ").", 9000);
+  } catch (err) { aviso("A verificação falhou: " + err.message, 7000); }
+  b.removeAttribute("aria-busy"); b.disabled = false; carregarAlbum();
+};
 
 async function definir(code, value, ok) {
   try { await api("/api/definir", { code, value }); aviso(ok || "Ajuste salvo"); setTimeout(carregar, 1500); }
