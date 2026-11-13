@@ -34,8 +34,8 @@ def main():
     if faltam:
         msg = ("Faltam os segredos do repositório: " + ", ".join(faltam) + ". Crie em Settings > Secrets and variables > "
                "Actions, na aba Secrets (não em Variables), com o nome exatamente assim.")
-        if os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch":
-            sys.exit(msg)                      # teste manual: a falha tem que aparecer
+        if os.environ.get("GITHUB_EVENT_NAME") != "schedule":
+            sys.exit(msg)                      # teste manual ou alteração no robô: a falha tem que aparecer
         # Execução agendada sem configuração: avisa sem marcar falha (evita e-mail a cada execução).
         print("::notice::Fotos desativadas. " + msg)
         return

@@ -4,6 +4,9 @@ on:
   schedule:
     - cron: "*/15 * * * *"  # reserva: o GitHub atrasa ou pula execuções; quem chama na hora é o Apps Script
   workflow_dispatch:
+  push:                      # mexeu no robô: ele roda uma vez para provar que continua funcionando
+    branches: [main]
+    paths: ["scripts/foto.py", ".github/workflows/fotos.yml"]
 
 permissions:
   contents: read
