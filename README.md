@@ -58,7 +58,7 @@ O GitHub sozinho atrasa ou pula tarefas agendadas (chegou a rodar 4 vezes por di
 
 **c) Ligar o agendador:** depois de colar o `Code.gs` novo e o `appsscript.json` novo, rode a função `instalarGatilho` no editor (autorize de novo quando o Google pedir). Em seguida, **Implantar > Gerenciar implantações > Editar > Nova versão**.
 
-Para testar: **Actions > Fotos da Capitu > Run workflow**. Os ajustes (ligar, minutos depois da refeição, foto de rotina) ficam no painel, em **Álbum da Capitu**, que também mostra o estado do agendador e avisos de erro.
+Para testar na hora: no site, em **Álbum da Capitu**, o botão **Verificar agora** roda a mesma verificação do agendador e diz o que decidiu (e já chama o robô se houver foto devida). A linha de status do álbum mostra se o gatilho está instalado e quando rodou por último. Também dá para usar **Actions > Fotos da Capitu > Run workflow**. Os ajustes (ligar, minutos depois da refeição, foto de rotina) ficam no painel, em **Álbum da Capitu**, que também mostra o estado do agendador e avisos de erro.
 
 ## Limites conhecidos
 

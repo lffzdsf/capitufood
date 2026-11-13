@@ -75,6 +75,7 @@ function rotear_(c) {
     case 'fotos': return fotos_();
     case 'fotoVer': return fotoVer_(c.id);
     case 'fotosConfig': return fotosConfig_(c);
+    case 'verificarAgora': return verificarAgora_();
     default: throw erro_('ação desconhecida: ' + acao);
   }
 }
@@ -311,18 +312,37 @@ function fotoPendente_() {
    a cada 5 minutos ele confere se há foto devida e, só então, manda o GitHub rodar o robô na hora. */
 
 function verificarFoto() {
+  var resultado;
+  try {
+    resultado = decidirFoto_();
+  } catch (err) {
+    registrarVerificacao_('erro: ' + String(err && err.message || err));
+    throw err;                       // continua aparecendo como falha em Execuções
+  }
+  registrarVerificacao_(resultado);
+  return resultado;
+}
+
+/** Guarda quando o agendador rodou e o que decidiu, para o site mostrar. */
+function registrarVerificacao_(texto) {
+  PROPS.setProperty('FOTO_VERIF', JSON.stringify({ t: Math.floor(Date.now() / 1000), r: String(texto).slice(0, 140) }));
+}
+
+function decidirFoto_() {
   var token = prop_('GITHUB_TOKEN');
-  if (!token) return;
+  if (!token) return 'sem o token do GitHub';
   var d;
   try {
     d = fotoDevida_();
   } catch (err) {
-    PROPS.setProperty('FOTO_ULTIMO_ERRO', 'Tuya: ' + String(err && err.message || err).slice(0, 160));
-    return;
+    var m = 'Tuya: ' + String(err && err.message || err).slice(0, 120);
+    PROPS.setProperty('FOTO_ULTIMO_ERRO', m);
+    return m;
   }
-  if (!d.tirar) return;
+  if (!d.tirar) return 'nada a fazer (' + d.motivo + ')';
   var agora = Date.now();
-  if (agora - Number(prop_('FOTO_DISPARO') || 0) < 10 * 60000) return;   // já chamou o robô há pouco
+  var desde = agora - Number(prop_('FOTO_DISPARO') || 0);
+  if (desde < 10 * 60000) return 'robô já chamado há ' + Math.round(desde / 60000) + ' min';   // evita chamar em dobro
   var repo = prop_('GITHUB_REPO') || 'lffzdsf/capitufood';
   var resp = UrlFetchApp.fetch('https://api.github.com/repos/' + repo + '/actions/workflows/fotos.yml/dispatches', {
     method: 'post',
@@ -334,10 +354,34 @@ function verificarFoto() {
   var cod = resp.getResponseCode();
   if (cod === 204) {
     PROPS.setProperties({ FOTO_DISPARO: String(agora), FOTO_ULTIMO_ERRO: '' });
-  } else {
-    var dica = cod === 401 ? ' (token inválido ou vencido)' : (cod === 403 || cod === 404) ? ' (token sem permissão neste repositório)' : '';
-    PROPS.setProperty('FOTO_ULTIMO_ERRO', 'GitHub respondeu ' + cod + dica);
+    return 'robô chamado (' + d.motivo + ')';
   }
+  var dica = cod === 401 ? ' (token inválido ou vencido)' : (cod === 403 || cod === 404) ? ' (token sem permissão neste repositório)' : '';
+  var texto = 'GitHub respondeu ' + cod + dica;
+  PROPS.setProperty('FOTO_ULTIMO_ERRO', texto);
+  return texto;
+}
+
+/** Botão "Verificar agora" do site: roda a mesma verificação do agendador e mostra os números por trás dela. */
+function verificarAgora_() {
+  var resultado = verificarFoto();
+  var cfg = configFotos_(), props = propriedades_(), ultima = null;
+  try { ultima = JSON.parse(props.feed_record || 'null'); } catch (err) { /* sem registro */ }
+  return {
+    ok: true,
+    resultado: resultado,
+    detalhe: {
+      ativas: cfg.ativas,
+      minutosApos: cfg.minutosApos,
+      privado: !!props.basic_private,
+      ultimaRefeicao: (ultima && ultima.time) || 0,
+      ultimaRefeicaoFotografada: Number(prop_('FOTO_ULTIMA_REFEICAO') || 0)
+    }
+  };
+}
+
+function gatilhoInstalado_() {
+  return ScriptApp.getProjectTriggers().some(function (t) { return t.getHandlerFunction() === 'verificarFoto'; });
 }
 
 /** Rode uma vez pelo editor para ligar o agendador (a cada 5 minutos). Pode rodar de novo sem duplicar. */
@@ -390,7 +434,9 @@ function fotos_() {
       gatilho: !!prop_('GITHUB_TOKEN'),
       disparo: Math.floor(Number(prop_('FOTO_DISPARO') || 0) / 1000),
       ultimaFoto: itens.length ? itens[0].t : 0,
-      erro: prop_('FOTO_ULTIMO_ERRO')
+      erro: prop_('FOTO_ULTIMO_ERRO'),
+      agendador: gatilhoInstalado_(),
+      verif: (function () { try { return JSON.parse(prop_('FOTO_VERIF') || 'null'); } catch (err) { return null; } })()
     }
   };
 }
@@ -434,6 +480,5 @@ function testarConfiguracao() {
   Logger.log('Comedouro: %s (%s) - %s', e.nome, e.modelo, e.online ? 'online' : 'offline');
   Logger.log('Pasta das fotos: %s', pastaFotos_().getUrl());
   Logger.log('SENHA_PAINEL definida: %s | TOKEN_ROBO definido: %s', !!prop_('SENHA_PAINEL'), !!prop_('TOKEN_ROBO'));
-  Logger.log('GITHUB_TOKEN definido: %s | agendador ligado: %s', !!prop_('GITHUB_TOKEN'),
-    ScriptApp.getProjectTriggers().some(function (t) { return t.getHandlerFunction() === 'verificarFoto'; }));
+  Logger.log('GITHUB_TOKEN definido: %s | agendador ligado: %s', !!prop_('GITHUB_TOKEN'), gatilhoInstalado_());
 }
