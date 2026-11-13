@@ -30,10 +30,18 @@ def chamar(url, dados):
 def main():
     url = os.environ.get("APPS_SCRIPT_URL", "").strip()
     token = os.environ.get("TOKEN_ROBO", "").strip()
-    if not url or not token:
-        # Ainda não configurado: avisa sem marcar a tarefa como falha (evita e-mails a cada 5 minutos).
-        print("::notice::Fotos desativadas: crie os segredos APPS_SCRIPT_URL e TOKEN_ROBO no repositório.")
+    faltam = [nome for nome, valor in (("APPS_SCRIPT_URL", url), ("TOKEN_ROBO", token)) if not valor]
+    if faltam:
+        msg = ("Faltam os segredos do repositório: " + ", ".join(faltam) + ". Crie em Settings > Secrets and variables > "
+               "Actions, na aba Secrets (não em Variables), com o nome exatamente assim.")
+        if os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch":
+            sys.exit(msg)                      # teste manual: a falha tem que aparecer
+        # Execução agendada sem configuração: avisa sem marcar falha (evita e-mail a cada execução).
+        print("::notice::Fotos desativadas. " + msg)
         return
+    if not (url.startswith("https://script.google.com/macros/s/") and url.endswith("/exec")):
+        sys.exit("APPS_SCRIPT_URL não parece o endereço do app da web: deve começar com "
+                 "https://script.google.com/macros/s/ e terminar em /exec (não é o 'código de implantação').")
 
     try:
         p = chamar(url, {"acao": "fotoPendente", "robo": token})
